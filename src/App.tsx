@@ -26,6 +26,7 @@ import {
 import { ROUTE_WAYPOINTS, type RouteWaypoint } from './routeData';
 import { CHECKPOINTS, type Checkpoint } from './checkpoints';
 import { usePedometer, type PedometerState } from './usePedometer';
+import { RouteMap } from './RouteMap';
 
 const TOTAL_DISTANCE_KM = ROUTE_WAYPOINTS[ROUTE_WAYPOINTS.length - 1].distanceKm;
 const TOTAL_STEPS = 100000;
@@ -772,32 +773,12 @@ function MapScreen({
       {/* Шагомер */}
       <PedometerCard pedometer={pedometer} />
 
-      {/* slider */}
-      <div className="mt-4 rounded-[24px] bg-gradient-to-br from-[#4a3528] to-[#3a2a1e] p-5 shadow-[0_6px_20px_rgba(42,29,20,0.4)]">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-serif font-semibold text-[#e8d9b8] flex items-center gap-2">
-            <Footprints size={15} /> Прогресс пути
-          </span>
-          <span className="text-sm font-serif font-bold text-[#f4d03f]">
-            {Math.round(progress * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={1000}
-          value={Math.round(progress * 1000)}
-          onChange={(e) => setProgress(Number(e.target.value) / 1000)}
-          className="pilgrim-range w-full"
-          style={{
-            background: `linear-gradient(to right, #c9971a ${progress * 100}%, #6b4423 ${progress * 100}%)`,
-          }}
-        />
-        <div className="flex justify-between text-[11px] text-[#a08868] font-serif italic mt-2">
-          <span>{ROUTE_WAYPOINTS[0].name}</span>
-          <span>{ROUTE_WAYPOINTS[ROUTE_WAYPOINTS.length - 1].name}</span>
-        </div>
-      </div>
+      {/* Интерактивная карта пути */}
+      <RouteMap
+        progress={progress}
+        totalDistKm={totalDist}
+        onProgressChange={setProgress}
+      />
     </div>
   );
 }
