@@ -85,3 +85,17 @@ input[type='range'].pilgrim-range::-moz-range-thumb {
 .animate-fade-in-up {
   animation: fadeInUp 0.4s ease-out both;
 }
+
+/* Sheet modal slide-up */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

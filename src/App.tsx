@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapPin,
   Navigation,
@@ -10,14 +10,26 @@ import {
   BookOpen,
   User,
   Map as MapIcon,
+  Lock,
+  ChevronLeft,
+  Scroll,
+  Sparkles,
+  X,
+  CheckCircle2,
+  Footprints as FootprintsIcon,
 } from 'lucide-react';
 import { ROUTE_WAYPOINTS, type RouteWaypoint } from './routeData';
+import { CHECKPOINTS, type Checkpoint } from './checkpoints';
 
 const TOTAL_DISTANCE_KM = ROUTE_WAYPOINTS[ROUTE_WAYPOINTS.length - 1].distanceKm;
 const TOTAL_STEPS = 100000;
 const TOTAL_MIN = 9600;
 
 type Tab = 'map' | 'journal' | 'profile';
+
+const STORAGE_KEY = 'pilgrim-progress';
+const TAB_KEY = 'pilgrim-tab';
+const UNLOCKED_KEY = 'pilgrim-unlocked-checkpoints';
 
 function nearestWaypoint(distKm: number): { waypoint: RouteWaypoint; index: number } {
   let best = ROUTE_WAYPOINTS[0];
@@ -33,9 +45,6 @@ function nearestWaypoint(distKm: number): { waypoint: RouteWaypoint; index: numb
   }
   return { waypoint: best, index: bestIndex };
 }
-
-const STORAGE_KEY = 'pilgrim-progress';
-const TAB_KEY = 'pilgrim-tab';
 
 function loadProgress(): number {
   try {
@@ -57,9 +66,36 @@ function loadTab(): Tab {
   return 'map';
 }
 
+function loadUnlocked(): Record<string, string> {
+  try {
+    const v = localStorage.getItem(UNLOCKED_KEY);
+    if (v) return JSON.parse(v);
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export default function App() {
   const [progress, setProgress] = useState(loadProgress);
   const [tab, setTab] = useState<Tab>(loadTab);
+  const [unlockedMap, setUnlockedMap] = useState<Record<string, string>>(loadUnlocked);
+  const [openCheckpoint, setOpenCheckpoint] = useState<Checkpoint | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevUnlocked = useRef<Set<string>>(new Set(Object.keys(unlockedMap)));
 
   useEffect(() => {
     try {
@@ -87,6 +123,60 @@ export default function App() {
     [distDoneKm],
   );
 
+  // Разблокировка чекпоинтов при достижении дистанции
+  useEffect(() => {
+    const newUnlocked = { ...unlockedMap };
+    let changed = false;
+    for (const cp of CHECKPOINTS) {
+      if (distDoneKm >= cp.distanceKm && !newUnlocked[cp.id]) {
+        newUnlocked[cp.id] = new Date().toISOString();
+        changed = true;
+      }
+    }
+    if (changed) {
+      setUnlockedMap(newUnlocked);
+      try {
+        localStorage.setItem(UNLOCKED_KEY, JSON.stringify(newUnlocked));
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [distDoneKm, unlockedMap]);
+
+  // Тост при новой разблокировке
+  useEffect(() => {
+    const currentIds = new Set(Object.keys(unlockedMap));
+    for (const id of currentIds) {
+      if (!prevUnlocked.current.has(id)) {
+        const cp = CHECKPOINTS.find((c) => c.id === id);
+        if (cp) {
+          setToast(cp.title);
+          if (toastTimer.current) clearTimeout(toastTimer.current);
+          toastTimer.current = setTimeout(() => setToast(null), 6000);
+        }
+      }
+    }
+    prevUnlocked.current = currentIds;
+  }, [unlockedMap]);
+
+  // Чекпоинты с состоянием разблокировки
+  const checkpoints: Checkpoint[] = useMemo(
+    () =>
+      CHECKPOINTS.map((cp) => {
+        const unlockedAt = unlockedMap[cp.id] ?? null;
+        return {
+          ...cp,
+          isUnlocked: unlockedAt !== null,
+          unlockedAt,
+        };
+      }),
+    [unlockedMap],
+  );
+
+  const toastCheckpoint = toast
+    ? checkpoints.find((c) => c.title === toast) ?? null
+    : null;
+
   return (
     <div className="min-h-screen bg-[#3d2b1f] flex items-center justify-center p-4 font-body">
       {/* Phone frame */}
@@ -97,7 +187,7 @@ export default function App() {
         <div className="absolute inset-0 flex flex-col parchment-bg">
           {/* status bar */}
           <div className="h-9 px-6 flex items-center justify-between text-[11px] font-medium text-[#6b4423] pt-1 shrink-0">
-            <span className="font-serif font-semibold">IX · XX</span>
+            <span className="font-serif font-semibold">IX · XXII</span>
             <span className="flex items-center gap-1">
               <span className="w-4 h-2 rounded-sm border border-[#a08060] relative">
                 <span className="absolute inset-0.5 bg-[#8b5a2b] rounded-[1px]" />
@@ -106,7 +196,7 @@ export default function App() {
           </div>
 
           {/* screen content */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto relative">
             {tab === 'map' && (
               <MapScreen
                 current={current}
@@ -117,6 +207,8 @@ export default function App() {
                 totalDist={TOTAL_DISTANCE_KM}
                 stepsDone={stepsDone}
                 minDone={minDone}
+                checkpoints={checkpoints}
+                onOpenCheckpoint={setOpenCheckpoint}
               />
             )}
             {tab === 'journal' && (
@@ -125,10 +217,42 @@ export default function App() {
                 stepsDone={stepsDone}
                 minDone={minDone}
                 distDone={distDone}
+                checkpoints={checkpoints}
+                onOpenCheckpoint={setOpenCheckpoint}
               />
             )}
             {tab === 'profile' && (
-              <ProfileScreen stepsDone={stepsDone} distDone={distDone} minDone={minDone} />
+              <ProfileScreen
+                stepsDone={stepsDone}
+                distDone={distDone}
+                minDone={minDone}
+                checkpoints={checkpoints}
+                onOpenCheckpoint={setOpenCheckpoint}
+              />
+            )}
+
+            {/* Тост-уведомление */}
+            {toastCheckpoint && (
+              <button
+                onClick={() => {
+                  setOpenCheckpoint(toastCheckpoint);
+                  setToast(null);
+                }}
+                className="absolute bottom-4 left-3 right-3 z-20 rounded-2xl bg-gradient-to-r from-[#c9971a] to-[#8b5a2b] px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.4)] flex items-center gap-3 text-left animate-fade-in-up"
+              >
+                <div className="w-10 h-10 rounded-xl bg-[#f4d03f]/30 flex items-center justify-center shrink-0">
+                  <Sparkles size={20} className="text-[#f4d03f]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] text-[#f5ead0]/80 font-body">
+                    Открыта новая точка
+                  </p>
+                  <p className="text-sm font-serif font-bold text-[#f5ead0] truncate">
+                    {toastCheckpoint.title}! Нажмите, чтобы прочитать дневник
+                  </p>
+                </div>
+                <BookOpen size={18} className="text-[#f5ead0] shrink-0" />
+              </button>
             )}
           </div>
 
@@ -157,6 +281,15 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Модальное окно дневника чекпоинта */}
+      {openCheckpoint && (
+        <CheckpointJournalSheet
+          checkpoint={openCheckpoint}
+          totalDist={TOTAL_DISTANCE_KM}
+          onClose={() => setOpenCheckpoint(null)}
+        />
+      )}
     </div>
   );
 }
@@ -190,6 +323,207 @@ function TabButton({
   );
 }
 
+/* ── Checkpoint List Card ── */
+function CheckpointListCard({
+  checkpoint,
+  totalDist,
+  onOpen,
+}: {
+  checkpoint: Checkpoint;
+  totalDist: number;
+  onOpen: (cp: Checkpoint) => void;
+}) {
+  if (checkpoint.isUnlocked) {
+    return (
+      <button
+        onClick={() => onOpen(checkpoint)}
+        className="w-full text-left rounded-[20px] overflow-hidden bg-[#fdf6e3] shadow-[0_4px_16px_rgba(74,47,28,0.12)] ring-1 ring-[#e0d0b0] animate-fade-in-up active:scale-[0.98] transition-transform"
+      >
+        <div className="relative h-28 overflow-hidden">
+          <img
+            src={checkpoint.imageUrl}
+            alt={checkpoint.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#2a1d14]/70 to-transparent" />
+          <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#c9971a] px-2 py-0.5 rounded-full shadow-md">
+            <CheckCircle2 size={11} className="text-[#f5ead0]" />
+            <span className="text-[10px] font-serif font-bold text-[#f5ead0]">Открыто</span>
+          </div>
+          <div className="absolute bottom-2 left-3 flex items-center gap-2">
+            <span className="text-[11px] text-[#e8d9b8] font-body italic">
+              {checkpoint.distanceKm} км
+            </span>
+          </div>
+        </div>
+        <div className="p-4">
+          <h3 className="text-lg font-serif font-bold text-[#4a2f1c] leading-tight">
+            {checkpoint.title}
+          </h3>
+          <p className="text-[13px] text-[#6b5642] font-body italic leading-relaxed mt-1">
+            {checkpoint.summary}
+          </p>
+          <div className="flex items-center gap-1.5 mt-3 text-[#8b5a2b]">
+            <BookOpen size={13} />
+            <span className="text-[12px] font-serif font-semibold">Читать дневник</span>
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-[20px] overflow-hidden bg-[#e8d9b8]/60 shadow-[0_2px_8px_rgba(74,47,28,0.08)] ring-1 ring-[#d4c4a0] opacity-60">
+      <div className="relative h-28 overflow-hidden">
+        <img
+          src={checkpoint.imageUrl}
+          alt={checkpoint.title}
+          className="w-full h-full object-cover grayscale"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-[#2a1d14]/50" />
+        <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#3a2a1e] px-2 py-0.5 rounded-full">
+          <Lock size={11} className="text-[#a08868]" />
+          <span className="text-[10px] font-serif font-bold text-[#a08868]">Закрыто</span>
+        </div>
+      </div>
+      <div className="p-4">
+        <h3 className="text-lg font-serif font-bold text-[#6b5642] leading-tight">
+          {checkpoint.title}
+        </h3>
+        <p className="text-[13px] text-[#8b6f47] font-body italic leading-relaxed mt-1">
+          Откроется на {checkpoint.distanceKm} км
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Checkpoint Journal Sheet Modal ── */
+function CheckpointJournalSheet({
+  checkpoint,
+  totalDist,
+  onClose,
+}: {
+  checkpoint: Checkpoint;
+  totalDist: number;
+  onClose: () => void;
+}) {
+  const [detailTab, setDetailTab] = useState<'history' | 'legend'>('history');
+
+  const historyParagraphs = checkpoint.history.split('\n\n');
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-[400px] h-[92%] bg-[#fdf6e3] rounded-t-[36px] shadow-2xl overflow-hidden animate-slide-up flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Hero image */}
+        <div className="relative h-52 shrink-0">
+          <img
+            src={checkpoint.imageUrl}
+            alt={checkpoint.title}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#2a1d14] via-[#2a1d14]/40 to-transparent" />
+
+          {/* Back button */}
+          <button
+            onClick={onClose}
+            className="absolute top-3 left-3 w-10 h-10 rounded-full bg-[#2a1d14]/60 backdrop-blur flex items-center justify-center text-[#f5ead0] active:scale-90 transition border border-[#f5ead0]/20"
+          >
+            <ChevronLeft size={22} />
+          </button>
+
+          {/* Title overlay */}
+          <div className="absolute bottom-4 left-5 right-5">
+            <h2 className="text-2xl font-serif font-bold text-[#f5ead0] leading-tight drop-shadow-lg">
+              {checkpoint.title}
+            </h2>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[11px] font-serif font-semibold text-[#f5ead0] bg-[#c9971a]/90 px-2.5 py-1 rounded-full">
+                Км {checkpoint.distanceKm} из {totalDist}
+              </span>
+              {checkpoint.unlockedAt && (
+                <span className="text-[11px] font-serif font-semibold text-[#f5ead0] bg-[#8b5a2b]/80 px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <CheckCircle2 size={11} /> {formatDate(checkpoint.unlockedAt)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex shrink-0 px-5 pt-4 gap-2">
+          <button
+            onClick={() => setDetailTab('history')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-serif font-semibold transition-all ${
+              detailTab === 'history'
+                ? 'bg-[#c9971a] text-[#f5ead0] shadow-md'
+                : 'bg-[#e8d9b8] text-[#8b6f47]'
+            }`}
+          >
+            <Scroll size={15} /> История
+          </button>
+          <button
+            onClick={() => setDetailTab('legend')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-serif font-semibold transition-all ${
+              detailTab === 'legend'
+                ? 'bg-[#c9971a] text-[#f5ead0] shadow-md'
+                : 'bg-[#e8d9b8] text-[#8b6f47]'
+            }`}
+          >
+            <Sparkles size={15} /> Легенды
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-24">
+          {detailTab === 'history' ? (
+            <div className="space-y-4">
+              {historyParagraphs.map((para, i) => (
+                <p
+                  key={i}
+                  className="text-[14px] text-[#4a2f1c] font-body leading-[1.8] first-letter:font-serif first-letter:text-3xl first-letter:font-bold first-letter:text-[#c9971a] first-letter:mr-1 first-letter:float-left first-letter:leading-[0.9]"
+                >
+                  {para}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-gradient-to-br from-[#f0e4c8] to-[#e8d9b8] p-5 ring-1 ring-[#d4c4a0]">
+              <div className="flex items-center gap-2 mb-3">
+                <Feather size={16} className="text-[#8b5a2b]" />
+                <span className="text-xs font-serif font-semibold text-[#8b6f47] tracking-wide uppercase">
+                  Местное предание
+                </span>
+              </div>
+              <p className="text-[14px] text-[#4a2f1c] font-body leading-[1.8] italic">
+                {checkpoint.legend}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Floating action button */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#fdf6e3] via-[#fdf6e3]/95 to-transparent pt-8">
+          <button
+            onClick={onClose}
+            className="w-full rounded-2xl bg-gradient-to-r from-[#c9971a] to-[#8b5a2b] py-3.5 text-[#f5ead0] font-serif font-bold text-base shadow-[0_6px_20px_rgba(139,90,43,0.4)] active:scale-[0.97] transition flex items-center justify-center gap-2"
+          >
+            <FootprintsIcon size={18} /> Продолжить путь
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Map Screen ── */
 function MapScreen({
   current,
@@ -200,6 +534,8 @@ function MapScreen({
   totalDist,
   stepsDone,
   minDone,
+  checkpoints,
+  onOpenCheckpoint,
 }: {
   current: RouteWaypoint;
   index: number;
@@ -209,6 +545,8 @@ function MapScreen({
   totalDist: number;
   stepsDone: number;
   minDone: number;
+  checkpoints: Checkpoint[];
+  onOpenCheckpoint: (cp: Checkpoint) => void;
 }) {
   return (
     <div className="px-3 pt-2 pb-4">
@@ -286,8 +624,29 @@ function MapScreen({
         </div>
       </div>
 
+      {/* Checkpoints section */}
+      <div className="mt-4 px-2">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#c9b896]" />
+          <span className="text-xs font-serif font-semibold text-[#8b6f47] tracking-wide uppercase">
+            Точки дневника
+          </span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#c9b896]" />
+        </div>
+        <div className="space-y-3">
+          {checkpoints.map((cp) => (
+            <CheckpointListCard
+              key={cp.id}
+              checkpoint={cp}
+              totalDist={totalDist}
+              onOpen={onOpenCheckpoint}
+            />
+          ))}
+        </div>
+      </div>
+
       {/* slider */}
-      <div className="mt-3 rounded-[24px] bg-gradient-to-br from-[#4a3528] to-[#3a2a1e] p-5 shadow-[0_6px_20px_rgba(42,29,20,0.4)]">
+      <div className="mt-4 rounded-[24px] bg-gradient-to-br from-[#4a3528] to-[#3a2a1e] p-5 shadow-[0_6px_20px_rgba(42,29,20,0.4)]">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-serif font-semibold text-[#e8d9b8] flex items-center gap-2">
             <Footprints size={15} /> Прогресс пути
@@ -322,14 +681,19 @@ function JournalScreen({
   stepsDone,
   minDone,
   distDone,
+  checkpoints,
+  onOpenCheckpoint,
 }: {
   progress: number;
   stepsDone: number;
   minDone: number;
   distDone: string;
+  checkpoints: Checkpoint[];
+  onOpenCheckpoint: (cp: Checkpoint) => void;
 }) {
   const distKm = progress * TOTAL_DISTANCE_KM;
   const entries = ROUTE_WAYPOINTS.filter((w) => w.distanceKm <= distKm + 0.5);
+  const unlockedCount = checkpoints.filter((c) => c.isUnlocked).length;
 
   return (
     <div className="px-5 pt-3 pb-4">
@@ -356,7 +720,35 @@ function JournalScreen({
         </div>
       </div>
 
-      {/* journal entries */}
+      {/* Checkpoint journals */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#c9b896]" />
+          <span className="text-xs font-serif font-semibold text-[#8b6f47] tracking-wide uppercase">
+            Дневники точек ({unlockedCount}/{checkpoints.length})
+          </span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#c9b896]" />
+        </div>
+        <div className="space-y-3">
+          {checkpoints.map((cp) => (
+            <CheckpointListCard
+              key={cp.id}
+              checkpoint={cp}
+              totalDist={TOTAL_DISTANCE_KM}
+              onOpen={onOpenCheckpoint}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* route journal entries */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#c9b896]" />
+        <span className="text-xs font-serif font-semibold text-[#8b6f47] tracking-wide uppercase">
+          Записи маршрута
+        </span>
+        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#c9b896]" />
+      </div>
       <div className="space-y-3">
         {entries.length === 0 ? (
           <div className="text-center py-12">
@@ -409,14 +801,19 @@ function ProfileScreen({
   stepsDone,
   distDone,
   minDone,
+  checkpoints,
+  onOpenCheckpoint,
 }: {
   stepsDone: number;
   distDone: string;
   minDone: number;
+  checkpoints: Checkpoint[];
+  onOpenCheckpoint: (cp: Checkpoint) => void;
 }) {
   const reachedCount = ROUTE_WAYPOINTS.filter(
     (w) => w.distanceKm <= parseFloat(distDone),
   ).length;
+  const unlockedCount = checkpoints.filter((c) => c.isUnlocked).length;
 
   return (
     <div className="px-5 pt-3 pb-4">
@@ -476,6 +873,53 @@ function ProfileScreen({
         </div>
       </div>
 
+      {/* Checkpoint progress */}
+      <div className="rounded-[24px] bg-[#fdf6e3] shadow-[0_8px_24px_rgba(74,47,28,0.18)] ring-1 ring-[#e0d0b0] p-5 mb-4">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#c9b896] to-transparent" />
+          <span className="text-xs font-serif font-semibold text-[#8b6f47] tracking-wide">Дневники точек</span>
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#c9b896] to-transparent" />
+        </div>
+        <div className="flex items-center justify-center gap-3">
+          <span className="text-4xl font-serif font-bold text-[#c9971a]">{unlockedCount}</span>
+          <span className="text-2xl font-serif text-[#a08868]">/ {checkpoints.length}</span>
+        </div>
+        <div className="mt-3 h-2 rounded-full bg-[#e8d9b8] overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-[#c9971a] to-[#8b5a2b] rounded-full transition-all duration-300"
+            style={{ width: `${(unlockedCount / checkpoints.length) * 100}%` }}
+          />
+        </div>
+        <div className="mt-3 space-y-2">
+          {checkpoints.map((cp) => (
+            <button
+              key={cp.id}
+              onClick={() => cp.isUnlocked && onOpenCheckpoint(cp)}
+              disabled={!cp.isUnlocked}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2 text-left transition ${
+                cp.isUnlocked
+                  ? 'bg-[#f0e4c8] hover:bg-[#e8d9b8] active:scale-[0.98]'
+                  : 'bg-[#e8d9b8]/50 opacity-60'
+              }`}
+            >
+              {cp.isUnlocked ? (
+                <CheckCircle2 size={16} className="text-[#c9971a] shrink-0" />
+              ) : (
+                <Lock size={16} className="text-[#a08868] shrink-0" />
+              )}
+              <span className={`text-sm font-serif font-semibold flex-1 truncate ${
+                cp.isUnlocked ? 'text-[#4a2f1c]' : 'text-[#8b6f47]'
+              }`}>
+                {cp.title}
+              </span>
+              <span className="text-[11px] text-[#8b6f47] font-body italic shrink-0">
+                {cp.distanceKm} км
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* achievements */}
       <div className="rounded-[24px] bg-[#fdf6e3] shadow-[0_8px_24px_rgba(74,47,28,0.18)] ring-1 ring-[#e0d0b0] p-5">
         <div className="flex items-center gap-2 mb-4">
@@ -486,7 +930,7 @@ function ProfileScreen({
         <div className="space-y-3">
           <Achievement icon={<Mountain size={18} />} title="Первый шаг" desc="Вступить на тропу" unlocked={stepsDone > 0} />
           <Achievement icon={<Compass size={18} />} title="Искатель путей" desc="Достичь первой точки маршрута" unlocked={reachedCount >= 1} />
-          <Achievement icon={<Feather size={18} />} title="Летописец" desc="Записать первую заметку в дневник" unlocked={reachedCount >= 1} />
+          <Achievement icon={<Feather size={18} />} title="Летописец" desc="Открыть первый дневник точки" unlocked={unlockedCount >= 1} />
           <Achievement icon={<MapPin size={18} />} title="Вершина" desc="Достичь Сантьяго-де-Компостела" unlocked={reachedCount >= ROUTE_WAYPOINTS.length} />
         </div>
       </div>
