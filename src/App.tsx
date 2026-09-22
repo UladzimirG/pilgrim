@@ -539,7 +539,7 @@ function PedometerCard({
 }: {
   pedometer: ReturnType<typeof usePedometer>;
 }) {
-  const { steps, state, distanceKm, start, stop, addSteps } = pedometer;
+  const { steps, state, distanceKm, start, stop, addDistance } = pedometer;
 
   const stateLabel: Record<PedometerState, string> = {
     idle: 'Остановлен',
@@ -614,32 +614,32 @@ function PedometerCard({
         </button>
       )}
 
-      {/* Дебаг-слайдер для десктопа */}
+      {/* Дебаг-кнопки для десктопа */}
       <div className="mt-4 pt-4 border-t border-[#5a3f2e]/50">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] text-[#a08868] font-body italic">
-            Отладка: добавить шаги вручную
+            Отладка: изменить расстояние
           </span>
           <span className="text-[11px] text-[#a08868] font-serif">для теста на ПК</span>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => addSteps(-10)}
+            onClick={() => addDistance(-1)}
             className="w-9 h-9 rounded-xl bg-[#5a3f2e] flex items-center justify-center text-[#e8d9b8] active:scale-90 transition shrink-0"
           >
             <Minus size={16} />
           </button>
           <button
-            onClick={() => addSteps(10)}
+            onClick={() => addDistance(1)}
             className="flex-1 rounded-xl bg-[#5a3f2e] py-2 text-[#e8d9b8] font-serif font-semibold text-sm active:scale-[0.97] transition flex items-center justify-center gap-1.5"
           >
-            <Plus size={16} /> +10 шагов
+            <Plus size={16} /> +1 км
           </button>
           <button
-            onClick={() => addSteps(100)}
+            onClick={() => addDistance(10)}
             className="flex-1 rounded-xl bg-[#5a3f2e] py-2 text-[#e8d9b8] font-serif font-semibold text-sm active:scale-[0.97] transition flex items-center justify-center gap-1.5"
           >
-            <Plus size={16} /> +100 шагов
+            <Plus size={16} /> +10 км
           </button>
         </div>
       </div>
@@ -690,95 +690,53 @@ function MapScreen({
         </button>
       </div>
 
-      {/* location card with image */}
+      {/* Текущая точка — компактная плашка */}
       <div
         key={index}
-        className="rounded-[24px] overflow-hidden bg-[#fdf6e3] shadow-[0_8px_24px_rgba(74,47,28,0.18)] ring-1 ring-[#e0d0b0] animate-fade-in-up"
+        className="rounded-[20px] overflow-hidden bg-[#fdf6e3] shadow-[0_4px_16px_rgba(74,47,28,0.12)] ring-1 ring-[#e0d0b0] animate-fade-in-up"
       >
-        {/* image */}
-        <div className="relative h-40 overflow-hidden">
-          <img
-            src={current.image}
-            alt={current.name}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#2a1d14]/80 via-transparent to-transparent" />
-          <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between">
-            <div className="min-w-0">
-              <span className="text-[10px] font-serif font-semibold text-[#f5ead0] bg-[#8b5a2b]/90 px-2 py-0.5 rounded-full">
-                Точка {index + 1} / {ROUTE_WAYPOINTS.length}
-              </span>
-              <h2 className="text-xl font-serif font-bold text-[#f5ead0] truncate leading-tight mt-1 drop-shadow-md">
-                {current.name}
-              </h2>
-            </div>
-            <div className="shrink-0 text-right">
-              <span className="text-2xl font-serif font-bold text-[#f4d03f] leading-none drop-shadow-md">
-                {current.distanceKm}
-              </span>
-              <span className="text-xs text-[#e8d9b8] font-body block leading-none">км</span>
-            </div>
-          </div>
-        </div>
-
-        {/* card body */}
-        <div className="p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#c9b896] to-transparent" />
-            <Feather size={14} className="text-[#8b6f47]" />
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#c9b896] to-transparent" />
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#e8d9b8] flex items-center justify-center shrink-0 shadow-inner border border-[#d4c4a0]">
-              <MapPin size={20} className="text-[#8b5a2b]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] text-[#6b5642] font-body italic leading-relaxed">
-                {current.description}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2.5 mt-4">
-            <Stat icon={<Footprints size={15} />} label="Шагов" value={stepsDone.toLocaleString()} />
-            <Stat icon={<Clock size={15} />} label="В пути" value={`${minDone} мин`} />
-            <Stat icon={<Navigation size={15} />} label="Пройдено" value={`${distDone} км`} />
-          </div>
-        </div>
-      </div>
-
-      {/* Checkpoints section */}
-      <div className="mt-4 px-2">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#c9b896]" />
-          <span className="text-xs font-serif font-semibold text-[#8b6f47] tracking-wide uppercase">
-            Точки дневника
-          </span>
-          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#c9b896]" />
-        </div>
-        <div className="space-y-3">
-          {checkpoints.map((cp) => (
-            <CheckpointListCard
-              key={cp.id}
-              checkpoint={cp}
-              totalDist={totalDist}
-              onOpen={onOpenCheckpoint}
+        <div className="flex items-center gap-3 p-3">
+          <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
+            <img
+              src={current.image}
+              alt={current.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
             />
-          ))}
+          </div>
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-serif font-semibold text-[#8b5a2b]">
+              Точка {index + 1} / {ROUTE_WAYPOINTS.length}
+            </span>
+            <h2 className="text-base font-serif font-bold text-[#4a2f1c] truncate leading-tight">
+              {current.name}
+            </h2>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="text-lg font-serif font-bold text-[#c9971a] leading-none">
+              {current.distanceKm}
+            </span>
+            <span className="text-[10px] text-[#8b6f47] font-body block leading-none">км</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 px-3 pb-3">
+          <Stat icon={<Footprints size={13} />} label="Шагов" value={stepsDone.toLocaleString()} />
+          <Stat icon={<Clock size={13} />} label="В пути" value={`${minDone} мин`} />
+          <Stat icon={<Navigation size={13} />} label="Пройдено" value={`${distDone} км`} />
         </div>
       </div>
-
-      {/* Шагомер */}
-      <PedometerCard pedometer={pedometer} />
 
       {/* Интерактивная карта пути */}
       <RouteMap
         progress={progress}
         totalDistKm={totalDist}
         onProgressChange={setProgress}
+        checkpoints={checkpoints}
+        onOpenCheckpoint={onOpenCheckpoint}
       />
+
+      {/* Шагомер */}
+      <PedometerCard pedometer={pedometer} />
     </div>
   );
 }

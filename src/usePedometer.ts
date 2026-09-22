@@ -67,6 +67,10 @@ export function usePedometer() {
     setSteps((s) => Math.max(0, s + n));
   }, []);
 
+  const addDistance = useCallback((km: number) => {
+    setSteps((s) => Math.max(0, s + Math.round((km * 1000) / STRIDE_LENGTH_M)));
+  }, []);
+
   useEffect(() => {
     return () => {
       if (listenerRef.current) {
@@ -77,5 +81,5 @@ export function usePedometer() {
 
   const distanceKm = (steps * STRIDE_LENGTH_M) / 1000;
 
-  return { steps, state, distanceKm, start, stop, addSteps };
+  return { steps, state, distanceKm, start, stop, addSteps, addDistance };
 }
