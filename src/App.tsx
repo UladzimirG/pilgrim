@@ -14,12 +14,18 @@ import {
   ChevronLeft,
   Scroll,
   Sparkles,
-  X,
   CheckCircle2,
   Footprints as FootprintsIcon,
+  Activity,
+  Play,
+  Square,
+  Plus,
+  Minus,
+  ShieldAlert,
 } from 'lucide-react';
 import { ROUTE_WAYPOINTS, type RouteWaypoint } from './routeData';
 import { CHECKPOINTS, type Checkpoint } from './checkpoints';
+import { usePedometer, type PedometerState } from './usePedometer';
 
 const TOTAL_DISTANCE_KM = ROUTE_WAYPOINTS[ROUTE_WAYPOINTS.length - 1].distanceKm;
 const TOTAL_STEPS = 100000;
@@ -96,6 +102,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevUnlocked = useRef<Set<string>>(new Set(Object.keys(unlockedMap)));
+  const pedometer = usePedometer();
 
   useEffect(() => {
     try {
@@ -209,6 +216,7 @@ export default function App() {
                 minDone={minDone}
                 checkpoints={checkpoints}
                 onOpenCheckpoint={setOpenCheckpoint}
+                pedometer={pedometer}
               />
             )}
             {tab === 'journal' && (
@@ -524,6 +532,120 @@ function CheckpointJournalSheet({
   );
 }
 
+/* ── Карточка шагомера ── */
+function PedometerCard({
+  pedometer,
+}: {
+  pedometer: ReturnType<typeof usePedometer>;
+}) {
+  const { steps, state, distanceKm, start, stop, addSteps } = pedometer;
+
+  const stateLabel: Record<PedometerState, string> = {
+    idle: 'Остановлен',
+    requesting: 'Запрос разрешений…',
+    active: 'Активен',
+    denied: 'Доступ запрещён',
+    unsupported: 'Не поддерживается',
+  };
+
+  return (
+    <div className="mt-4 rounded-[24px] bg-gradient-to-br from-[#4a3528] to-[#3a2a1e] p-5 shadow-[0_6px_20px_rgba(42,29,20,0.4)]">
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm font-serif font-semibold text-[#e8d9b8] flex items-center gap-2">
+          <Activity size={15} /> Шагомер
+        </span>
+        <span
+          className={`text-[11px] font-serif font-semibold px-2 py-0.5 rounded-full ${
+            state === 'active'
+              ? 'text-[#f4d03f] bg-[#f4d03f]/15'
+              : state === 'denied' || state === 'unsupported'
+                ? 'text-[#e07a5f] bg-[#e07a5f]/15'
+                : 'text-[#a08868] bg-[#a08868]/15'
+          }`}
+        >
+          {stateLabel[state]}
+        </span>
+      </div>
+
+      {/* Живой счётчик шагов */}
+      <div className="flex items-center justify-center gap-6 mb-4">
+        <div className="text-center">
+          <div className="text-4xl font-serif font-bold text-[#f4d03f] leading-none tabular-nums">
+            {steps.toLocaleString()}
+          </div>
+          <div className="text-[11px] text-[#a08868] font-body mt-1">шагов</div>
+        </div>
+        <div className="w-px h-10 bg-[#5a3f2e]" />
+        <div className="text-center">
+          <div className="text-4xl font-serif font-bold text-[#e8d9b8] leading-none tabular-nums">
+            {distanceKm.toFixed(2)}
+          </div>
+          <div className="text-[11px] text-[#a08868] font-body mt-1">км</div>
+        </div>
+      </div>
+
+      {/* Кнопка запуска / остановки */}
+      {(state === 'idle' || state === 'denied' || state === 'unsupported') ? (
+        <button
+          onClick={start}
+          className="w-full rounded-2xl bg-gradient-to-r from-[#c9971a] to-[#8b5a2b] py-3 text-[#f5ead0] font-serif font-bold text-sm shadow-[0_4px_16px_rgba(139,90,43,0.3)] active:scale-[0.97] transition flex items-center justify-center gap-2"
+        >
+          {state === 'unsupported' ? (
+            <>
+              <ShieldAlert size={18} /> Датчики недоступны
+            </>
+          ) : (
+            <>
+              <Play size={18} /> {state === 'idle' ? 'Начать ходьбу' : 'Запросить доступ к сенсорам'}
+            </>
+          )}
+        </button>
+      ) : state === 'requesting' ? (
+        <div className="w-full rounded-2xl bg-[#5a3f2e] py-3 text-[#a08868] font-serif font-bold text-sm flex items-center justify-center gap-2">
+          <Activity size={18} className="animate-pulse" /> Ожидание разрешения…
+        </div>
+      ) : (
+        <button
+          onClick={stop}
+          className="w-full rounded-2xl bg-[#5a3f2e] py-3 text-[#e8d9b8] font-serif font-bold text-sm active:scale-[0.97] transition flex items-center justify-center gap-2"
+        >
+          <Square size={18} /> Остановить
+        </button>
+      )}
+
+      {/* Дебаг-слайдер для десктопа */}
+      <div className="mt-4 pt-4 border-t border-[#5a3f2e]/50">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] text-[#a08868] font-body italic">
+            Отладка: добавить шаги вручную
+          </span>
+          <span className="text-[11px] text-[#a08868] font-serif">для теста на ПК</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => addSteps(-10)}
+            className="w-9 h-9 rounded-xl bg-[#5a3f2e] flex items-center justify-center text-[#e8d9b8] active:scale-90 transition shrink-0"
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            onClick={() => addSteps(10)}
+            className="flex-1 rounded-xl bg-[#5a3f2e] py-2 text-[#e8d9b8] font-serif font-semibold text-sm active:scale-[0.97] transition flex items-center justify-center gap-1.5"
+          >
+            <Plus size={16} /> +10 шагов
+          </button>
+          <button
+            onClick={() => addSteps(100)}
+            className="flex-1 rounded-xl bg-[#5a3f2e] py-2 text-[#e8d9b8] font-serif font-semibold text-sm active:scale-[0.97] transition flex items-center justify-center gap-1.5"
+          >
+            <Plus size={16} /> +100 шагов
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Map Screen ── */
 function MapScreen({
   current,
@@ -536,6 +658,7 @@ function MapScreen({
   minDone,
   checkpoints,
   onOpenCheckpoint,
+  pedometer,
 }: {
   current: RouteWaypoint;
   index: number;
@@ -547,6 +670,7 @@ function MapScreen({
   minDone: number;
   checkpoints: Checkpoint[];
   onOpenCheckpoint: (cp: Checkpoint) => void;
+  pedometer: ReturnType<typeof usePedometer>;
 }) {
   return (
     <div className="px-3 pt-2 pb-4">
@@ -644,6 +768,9 @@ function MapScreen({
           ))}
         </div>
       </div>
+
+      {/* Шагомер */}
+      <PedometerCard pedometer={pedometer} />
 
       {/* slider */}
       <div className="mt-4 rounded-[24px] bg-gradient-to-br from-[#4a3528] to-[#3a2a1e] p-5 shadow-[0_6px_20px_rgba(42,29,20,0.4)]">
