@@ -5,13 +5,24 @@ export type PedometerState = 'idle' | 'requesting' | 'active' | 'denied' | 'unsu
 const MAGNITUDE_THRESHOLD = 1.2;
 const STEP_COOLDOWN_MS = 300;
 const STRIDE_LENGTH_M = 0.75;
+const STEPS_KEY = 'pilgrim-pedometer-steps';
+
+function loadSteps(): number {
+  try {
+    const v = localStorage.getItem(STEPS_KEY);
+    const n = v !== null ? parseInt(v, 10) : NaN;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
 
 type DeviceMotionEventConstructor = typeof DeviceMotionEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 };
 
 export function usePedometer() {
-  const [steps, setSteps] = useState(0);
+  const [steps, setSteps] = useState(loadSteps);
   const [state, setState] = useState<PedometerState>('idle');
   const lastStepTime = useRef(0);
   const listenerRef = useRef<((e: DeviceMotionEvent) => void) | null>(null);
@@ -70,6 +81,14 @@ export function usePedometer() {
   const addDistance = useCallback((km: number) => {
     setSteps((s) => Math.max(0, s + Math.round((km * 1000) / STRIDE_LENGTH_M)));
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STEPS_KEY, String(steps));
+    } catch {
+      /* ignore */
+    }
+  }, [steps]);
 
   useEffect(() => {
     return () => {
